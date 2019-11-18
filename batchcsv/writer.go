@@ -15,6 +15,7 @@ type Writer struct {
 	cfg  BatchConfig
 }
 
+// NewReader creates a new batch writer
 func NewWriter(fileName string, cfg BatchConfig) (*Writer, error) {
 	f, err := os.Create(fileName)
 	if err != nil {
@@ -29,12 +30,15 @@ func NewWriter(fileName string, cfg BatchConfig) (*Writer, error) {
 	return w, nil
 }
 
+// Write listens a channel of records. Internally, it spawns a limited amount of
+// worker to write the records. The records are piped into a job queue, with the
+// given buffer size.
 func (w *Writer) Write(results chan Record) {
 	var wg sync.WaitGroup
 
 	jobs := make(chan Job, w.cfg.MaxJobs)
 
-	pw := newParallelWriter(w.w)
+	pw := NewParallelWriter(w.w)
 
 	// spawn a number of workers
 	for i := 1; i <= w.cfg.MaxWorkers; i++ {
@@ -48,13 +52,13 @@ func (w *Writer) Write(results chan Record) {
 	close(jobs)
 }
 
-func (w *Writer) work(jobs <-chan Job, wg *sync.WaitGroup, pw *parallelWriter) {
+func (w *Writer) work(jobs <-chan Job, wg *sync.WaitGroup, pw *ParallelWriter) {
 	for j := range jobs {
 		func(j Job) {
 			defer wg.Done()
 			wg.Add(1)
 
-			err := pw.write(j.Record)
+			err := pw.Write(j.Record)
 			if err != nil {
 				log.Println("failed to write:", err)
 				return

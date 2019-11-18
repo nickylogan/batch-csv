@@ -6,18 +6,23 @@ import (
 	"github.com/smartystreets/scanners/csv"
 )
 
-type parallelWriter struct {
+// ParallelWriter is a wrapper for a CSV writer with mutex
+type ParallelWriter struct {
 	mux sync.Mutex
 	w   *csv.Writer
 }
 
-func newParallelWriter(w *csv.Writer) *parallelWriter {
-	return &parallelWriter{
+// NewParallelWriter creates a ParallelWriter instance. It takes a
+// csv writer to be wrapped upon
+func NewParallelWriter(w *csv.Writer) *ParallelWriter {
+	return &ParallelWriter{
 		w: w,
 	}
 }
 
-func (pw *parallelWriter) write(r Record) error {
+// Write is a thread-safe csv write. It automatically flushes the
+// written values to the file
+func (pw *ParallelWriter) Write(r Record) error {
 	defer pw.mux.Unlock()
 	pw.mux.Lock()
 	err := pw.w.Write(r)
