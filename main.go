@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -10,10 +11,13 @@ import (
 )
 
 func main() {
+	rand.Seed(time.Now().Unix())
+
 	cfg := batchcsv.BatchConfig{
-		MaxJobs:    100,
-		MaxWorkers: 100,
-		RateLimit:  100,
+		MaxJobs:      100,
+		MaxWorkers:   100,
+		RateLimit:    100,
+		OutputBuffer: 100,
 	}
 
 	// Create batch reader
@@ -21,25 +25,43 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-	defer r.File.Close()
+	defer r.Close()
+
+	// Create process pipe
+	logger := func(in batchcsv.Any) (out batchcsv.Any, err error) {
+		time.Sleep(time.Millisecond * time.Duration(rand.Intn(5000)))
+		fmt.Println("finished:", in)
+		return in, nil
+	}
+	p := batchcsv.NewPipe(cfg, logger)
+
+	// Create duplicator
+	d := batchcsv.NewDuplicator(cfg)
 
 	// Create batch writer
-	w, err := batchcsv.NewWriter("result.csv", cfg)
+	parser := func(a batchcsv.Any) (rec batchcsv.Record, err error) {
+		rec, ok := a.([]string)
+		if !ok {
+			return nil, errors.New("can't parse payload")
+		}
+		return rec, nil
+	}
+	w1, err := batchcsv.NewWriter("result1.csv", cfg, parser)
 	if err != nil {
 		log.Panic(err)
 	}
-	defer w.File.Close()
+	defer w1.Close()
 
-	// Create channel to pipe results from reader to writer
-	results := make(chan batchcsv.Record, 100)
-	go w.Write(results)
+	w2, err := batchcsv.NewWriter("result2.csv", cfg, parser)
+	if err != nil {
+		log.Panic(err)
+	}
+	defer w2.Close()
 
-	// Run batch reader
-	r.Run(func(j batchcsv.Job) {
-		fmt.Printf("%d: started\n", j.ID)
-		time.Sleep(time.Millisecond * time.Duration(rand.Intn(2000)))
-		results <- j.Record
-		fmt.Printf("%d: finished\n", j.ID)
-	})
-	close(results)
+	// Start pipeline
+	outs := d.Duplicate(p.Process(r.Read()), 2)
+	done1 := w1.Write(outs[0])
+	done2 := w2.Write(outs[1])
+	<-done1
+	<-done2
 }

@@ -5,5 +5,4 @@
 *.exe
 
 # Test csv files
-data.csv
-result.csv
+*.csv
